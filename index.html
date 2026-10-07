@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stevens Pass pass optimizer</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --ink:#111827; --muted:#6b7280;
+    --border:#e5e7eb; --green:#059669;
+  }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); margin:0; line-height:1.45}
+  header{background:#111827; color:#fff; padding:20px 24px 16px}
+  header h1{margin:0 0 10px; font-size:20px; font-weight:700}
+  .chips{display:flex; flex-wrap:wrap; gap:6px}
+  .chip{font-size:12px; background:#1f2937; border:1px solid #374151; color:#e5e7eb;
+    padding:3px 10px; border-radius:999px; white-space:nowrap}
+  .chip b{color:#fde68a; font-weight:700}
+  main{max-width:1060px; margin:0 auto; padding:16px 14px 60px}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:16px 18px; margin:12px 0}
+  .card h2{margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted)}
+  .inputs{display:grid; grid-template-columns:repeat(3,1fr); gap:12px}
+  @media(max-width:700px){.inputs{grid-template-columns:1fr}}
+  .inp{background:#f9fafb; border:1px solid var(--border); border-radius:10px; padding:10px 12px}
+  .inp .top{display:flex; justify-content:space-between; align-items:baseline}
+  .inp label{font-weight:650; font-size:14px}
+  .inp .n{font-size:24px; font-weight:800}
+  .inp input[type=range]{width:100%; margin:6px 0 0}
+  .inp .sub{font-size:12px; color:var(--muted)}
+  #verdict{display:flex; gap:18px; align-items:center; flex-wrap:wrap}
+  #verdict .cost{font-size:40px; font-weight:850; letter-spacing:-.02em}
+  #verdict .meta{font-size:13px; color:var(--muted)}
+  #verdict .buy{margin:6px 0}
+  .badge{display:inline-block; font-size:12px; font-weight:700; padding:2px 10px; border-radius:999px; color:#fff}
+  .b-singles{background:#6b7280}.b-epic{background:#059669}.b-select{background:#2563eb}
+  .b-combo{background:#7c3aed}.b-unl{background:#ea580c}
+  .pk{display:inline-block; font-size:12px; font-weight:700; padding:2px 10px; border-radius:999px;
+    margin:1px 4px 1px 0; white-space:nowrap; border:1px solid transparent}
+  .pk-sel{background:#dbeafe; color:#1d4ed8; border-color:#bfdbfe}
+  .pk-unl{background:#ffedd5; color:#c2410c; border-color:#fed7aa}
+  .pk-epic{background:#d1fae5; color:#047857; border-color:#a7f3d0}
+  .pk-day{background:#e2e8f0; color:#334155; border-color:#cbd5e1}
+  .pk-night{background:#ede9fe; color:#6d28d9; border-color:#ddd6fe}
+  table.opts{width:100%; border-collapse:collapse; font-size:14px}
+  table.opts th, table.opts td{text-align:left; padding:8px 10px; border-bottom:1px solid var(--border)}
+  table.opts th{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted)}
+  table.opts tr.best{background:#ecfdf5}
+  .tbl-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:4px}
+  .btn{background:#111827; color:#fff; border:none; border-radius:8px; padding:6px 12px;
+    cursor:pointer; font-weight:650; font-size:13px}
+  .btn:hover{background:#1f2937}
+  .hint{font-size:12.5px; color:var(--muted); margin:8px 0 0}
+  .map-ctrl{display:flex; gap:14px; align-items:end; flex-wrap:wrap; margin-bottom:10px}
+  .map-ctrl .fld{display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted)}
+  .map-ctrl select{font-size:14px; padding:6px 10px; border:1px solid var(--border); border-radius:8px; background:#fff}
+  .legend{display:flex; flex-wrap:wrap; gap:10px; font-size:12.5px; margin:0 0 10px; color:#374151}
+  .swatch{display:inline-block; width:12px; height:12px; border-radius:4px; margin-right:4px; vertical-align:-1px}
+  .grid-wrap{overflow-x:auto}
+  table.grid{border-collapse:collapse; font-size:11.5px; font-variant-numeric:tabular-nums}
+  table.grid th{background:#f9fafb; color:var(--muted); font-weight:600; padding:3px 0; min-width:46px;
+    border:1px solid var(--border); position:sticky; top:0}
+  table.grid th.corner{min-width:92px; font-size:11px; padding:3px 8px}
+  table.grid td{border:1px solid var(--border); text-align:center; padding:6px 2px; cursor:pointer; color:#111827}
+  table.grid td:hover{outline:2px solid #111827; outline-offset:-2px}
+  #mapTip{position:fixed; z-index:50; display:none; background:#111827; color:#fff; border-radius:10px;
+    padding:10px 12px; font-size:12.5px; max-width:320px; pointer-events:none; box-shadow:0 8px 24px rgba(0,0,0,.3)}
+  #mapTip .tt-head{font-weight:700; margin-bottom:6px; color:#e5e7eb}
+  #mapTip .tt-row{margin:5px 0}
+  #mapTip .tt-row .pk{margin:1px 3px 1px 0}
+  #mapTip .tt-cost{font-weight:800; color:#fde68a}
+  #mapTip .tt-alt{font-size:11px; color:#9ca3af; text-transform:uppercase; letter-spacing:.05em}
+  #mapTip .tt-hint{font-size:11px; color:#9ca3af; margin-top:6px}
+  details.assume{border:1px solid var(--border); border-radius:14px; background:var(--card);
+    padding:12px 18px; margin:12px 0; font-size:13.5px; color:#374151}
+  details.assume summary{cursor:pointer; font-weight:650; color:var(--muted); font-size:13px;
+    text-transform:uppercase; letter-spacing:.07em}
+  details.assume li{margin:4px 0}
+  code.k{background:#f3f4f6; padding:1px 6px; border-radius:6px; font-size:12.5px}
+  footer{color:var(--muted); font-size:12px; text-align:center; margin-top:16px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Stevens Pass pass optimizer</h1>
+  <div class="chips">
+    <span class="chip">Select <b>$462</b> · weekdays + nights</span>
+    <span class="chip">Unlimited <b>$720</b> · everything</span>
+    <span class="chip">Epic 3-day <b>$293</b></span>
+    <span class="chip">Epic 4-day <b>$367</b></span>
+    <span class="chip">Epic 5-day <b>$425</b></span>
+    <span class="chip">Epic 6-day <b>$482</b></span>
+    <span class="chip">Epic 7-day <b>$537</b></span>
+    <span class="chip">Day <b>$150</b></span>
+    <span class="chip">Night <b>$90</b></span>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Season</h2>
+    <div class="inputs">
+      <div class="inp">
+        <div class="top"><label for="inWeekdays">Weekdays</label><span class="n" id="outWeekdays">4</span></div>
+        <input type="range" id="inWeekdays" min="0" max="20" value="4">
+        <div class="sub">Covered by Select</div>
+      </div>
+      <div class="inp">
+        <div class="top"><label for="inWeekends">Weekends</label><span class="n" id="outWeekends">4</span></div>
+        <input type="range" id="inWeekends" min="0" max="20" value="4">
+        <div class="sub">Not covered by Select</div>
+      </div>
+      <div class="inp">
+        <div class="top"><label for="inNights">Nights</label><span class="n" id="outNights">4</span></div>
+        <input type="range" id="inNights" min="0" max="20" value="4">
+        <div class="sub">After 3pm · covered by Select</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Cheapest</h2>
+    <div id="verdict"></div>
+  </div>
+
+  <div class="card">
+    <div class="tbl-head">
+      <h2 style="margin:0">Options</h2>
+      <button class="btn" id="btnAll">Show all</button>
+    </div>
+    <div style="overflow-x:auto">
+    <table class="opts" id="optTable">
+      <thead><tr><th>Option</th><th>Passes</th><th>Total</th><th>vs singles</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <p class="hint" id="explainLine"></p>
+  </div>
+
+  <div class="card">
+    <h2>Map</h2>
+    <div class="map-ctrl">
+      <div class="fld">Rows
+        <select id="selRows">
+          <option value="weekdays">Weekdays</option>
+          <option value="weekends">Weekends</option>
+          <option value="nights" selected>Nights</option>
+        </select>
+      </div>
+      <div class="fld">Columns
+        <select id="selCols">
+          <option value="weekdays" selected>Weekdays</option>
+          <option value="weekends">Weekends</option>
+          <option value="nights">Nights</option>
+        </select>
+      </div>
+      <div class="fld" id="fixedNote" style="justify-content:flex-end; padding-bottom:7px"></div>
+    </div>
+    <div class="legend">
+      <span><span class="swatch" style="background:#e5e7eb"></span>Singles</span>
+      <span><span class="swatch" style="background:#6ee7b7"></span>Epic</span>
+      <span><span class="swatch" style="background:#93c5fd"></span>Select</span>
+      <span><span class="swatch" style="background:#c4b5fd"></span>Select + Epic</span>
+      <span><span class="swatch" style="background:#fdba74"></span>Unlimited</span>
+    </div>
+    <div class="grid-wrap"><div id="mapMount"></div></div>
+    <p class="hint">Cell = cheapest total. Hover for best + next 2. Click to load.</p>
+  </div>
+
+  <details class="assume">
+    <summary>Prices &amp; assumptions</summary>
+    <ul>
+      <li>Select ($462) covers all weekdays + all nights. Weekend days need separate tickets.</li>
+      <li>Unlimited ($720) covers everything. Never combined with other passes.</li>
+      <li>One Epic day covers 1 weekday or 1 weekend day. Leftover Epic days apply to nights. Multiple Epic bundles allowed.</li>
+      <li>Epic peak-day blackouts ignored. No tax/fees.</li>
+      <li>At current prices no Select + Epic mix can win: cheapest is $462 + $293 = $755 &gt; $720 Unlimited.</li>
+    </ul>
+  </details>
+
+  <footer>Prices editable in <code class="k">PRICES</code> (&lt;script&gt;). Oct 2026.</footer>
+</main>
+<div id="mapTip"></div>
+
+<script>
+const PRICES = { select: 462, unlimited: 720, day: 150, night: 90, epic: {3:293, 4:367, 5:425, 6:482, 7:537} };
+const EPIC_SIZES = [3,4,5,6,7];
+const DIMS = ['weekdays','weekends','nights'];
+const fmt = x => '$' + Math.round(x).toLocaleString();
+
+function coverCost(F, N){
+  const maxD = F + N + 7, INF = 1e15;
+  const dp = new Array(maxD+1).fill(INF);
+  const bk = new Array(maxD+1).fill(null);
+  dp[0] = 0; bk[0] = [];
+  for(let d=1; d<=maxD; d++)
+    for(const k of EPIC_SIZES){
+      const p = PRICES.epic[k];
+      if(d-k >= 0 && dp[d-k] + p < dp[d]){ dp[d] = dp[d-k] + p; bk[d] = [...bk[d-k], k]; }
+    }
+  let best = { cost: F*PRICES.day + N*PRICES.night, epicBundles: [], epicDays: 0,
+               singleDays: F, singleNights: N };
+  for(let d=0; d<=maxD; d++){
+    if(dp[d] === INF) continue;
+    const covDays = Math.min(d, F), remDays = F - covDays;
+    const covNights = Math.min(d - covDays, N), remNights = N - covNights;
+    const total = dp[d] + remDays*PRICES.day + remNights*PRICES.night;
+    if(total < best.cost - 1e-9)
+      best = { cost: total, epicBundles: [...bk[d]].sort((a,b)=>a-b), epicDays: d,
+               singleDays: remDays, singleNights: remNights };
+  }
+  return best;
+}
+
+function solve(weekdays, weekends, nights){
+  const noSel = coverCost(weekdays + weekends, nights);
+  const selCover = coverCost(weekends, 0);
+  const sel = { ...selCover, cost: selCover.cost + PRICES.select };
+  const unlCost = PRICES.unlimited;
+  let winner = 'noSelect', bestCost = noSel.cost;
+  if(sel.cost < bestCost - 1e-9){ winner = 'select'; bestCost = sel.cost; }
+  if(unlCost < bestCost - 1e-9){ winner = 'unlimited'; bestCost = unlCost; }
+  return { noSel, sel, unlCost, winner, bestCost,
+           singlesCost: (weekdays+weekends)*PRICES.day + nights*PRICES.night };
+}
+
+function categoryOf(sol){
+  if(sol.winner === 'unlimited') return {key:'unlimited', label:'Unlimited', cls:'b-unl', color:'#fdba74'};
+  const hasSel = sol.winner === 'select';
+  const b = sol.winner === 'select' ? sol.sel : sol.noSel;
+  const hasEpic = b.epicBundles.length > 0;
+  if(hasSel && hasEpic) return {key:'combo', label:'Select + Epic', cls:'b-combo', color:'#c4b5fd'};
+  if(hasSel) return {key:'select', label:'Select', cls:'b-select', color:'#93c5fd'};
+  if(hasEpic) return {key:'epic', label:'Epic', cls:'b-epic', color:'#6ee7b7'};
+  return {key:'singles', label:'Singles', cls:'b-singles', color:'#e5e7eb'};
+}
+
+function buyBadges(spec){
+  if(spec.unl) return `<span class="pk pk-unl">Unlimited · $720</span>`;
+  let h = '';
+  if(spec.sel) h += `<span class="pk pk-sel">Select · $462</span>`;
+  (spec.epic || []).forEach(k => { h += `<span class="pk pk-epic">Epic ${k}-day · $${PRICES.epic[k]}</span>`; });
+  if(spec.days) h += `<span class="pk pk-day">Day ×${spec.days}</span>`;
+  if(spec.nights) h += `<span class="pk pk-night">Night ×${spec.nights}</span>`;
+  return h || '<span class="hint">—</span>';
+}
+
+function specFor(winner, sol){
+  if(winner === 'unlimited') return {unl:true};
+  const b = winner === 'select' ? sol.sel : sol.noSel;
+  const spec = {epic:[...b.epicBundles], days:b.singleDays, nights:b.singleNights};
+  if(winner === 'select') spec.sel = true;
+  return spec;
+}
+
+function singleBundleCost(epicK, F, N){
+  if(!epicK) return { cost: F*PRICES.day + N*PRICES.night, singleDays: F, singleNights: N };
+  const covD = Math.min(epicK, F), remD = F - covD;
+  const covN = Math.min(epicK - covD, N), remN = N - covN;
+  return { cost: PRICES.epic[epicK] + remD*PRICES.day + remN*PRICES.night,
+           singleDays: remD, singleNights: remN };
+}
+
+// best mix per approach, cheapest first (deduped) — shared by table + tooltips
+function bestMixes(weekdays, weekends, nights){
+  const sol = solve(weekdays, weekends, nights);
+  const rows = [
+    {name:'Singles', spec:{days:weekdays+weekends, nights}, cost: sol.singlesCost},
+    {name:'Unlimited', spec:{unl:true}, cost: sol.unlCost},
+    {name:'Select', spec:{sel:true, epic:[...sol.sel.epicBundles], days:sol.sel.singleDays, nights:sol.sel.singleNights}, cost: sol.sel.cost},
+    {name:'No-Select', spec:{epic:[...sol.noSel.epicBundles], days:sol.noSel.singleDays, nights:sol.noSel.singleNights}, cost: sol.noSel.cost},
+  ];
+  const seen = new Set();
+  return { sol, rows: rows
+    .filter(r => { const k = buyBadges(r.spec)+'|'+Math.round(r.cost);
+      return seen.has(k) ? false : (seen.add(k), true); })
+    .sort((a,b) => a.cost - b.cost) };
+}
+
+// ---- UI ----
+const $ = id => document.getElementById(id);
+let showAll = false, mapRows = 'nights', mapCols = 'weekdays';
+
+function getInputs(){
+  return { weekdays: +$('inWeekdays').value||0, weekends: +$('inWeekends').value||0, nights: +$('inNights').value||0 };
+}
+function setInputs(weekdays, weekends, nights){
+  $('inWeekdays').value = weekdays; $('inWeekends').value = weekends; $('inNights').value = nights;
+  render();
+}
+
+function render(){
+  const {weekdays, weekends, nights} = getInputs();
+  $('outWeekdays').textContent = weekdays;
+  $('outWeekends').textContent = weekends;
+  $('outNights').textContent = nights;
+  const {sol, rows} = bestMixes(weekdays, weekends, nights);
+  const cat = categoryOf(sol);
+  const totalSessions = weekdays + weekends + nights;
+  const save = sol.singlesCost - sol.bestCost;
+
+  $('verdict').innerHTML =
+    `<span class="badge ${cat.cls}">${cat.label}</span>
+     <div class="cost">${fmt(sol.bestCost)}</div>
+     <div><div class="buy">${buyBadges(specFor(sol.winner, sol))}</div>
+     <div class="meta">${totalSessions} sessions · ${fmt(sol.bestCost/Math.max(1,totalSessions))}/session` +
+     (save > 0.5 ? ` · saves <b>${fmt(save)}</b> vs singles` : ` · no pass beats singles`) + `</div></div>`;
+
+  const extra = [{name:'Select + singles', spec:{sel:true, days:weekends}, cost: PRICES.select + weekends*PRICES.day}];
+  for(const k of EPIC_SIZES){
+    const r = singleBundleCost(k, weekdays+weekends, nights);
+    extra.push({name:`Epic ${k}-day`, spec:{epic:[k], days:r.singleDays, nights:r.singleNights}, cost:r.cost});
+    const r2 = singleBundleCost(k, weekends, 0);
+    extra.push({name:`Select + Epic ${k}-day`, spec:{sel:true, epic:[k], days:r2.singleDays, nights:r2.singleNights}, cost: PRICES.select + r2.cost});
+  }
+  const all = [...rows, ...extra];
+  const bestCost = Math.min(...all.map(r => r.cost));
+  const shown = (showAll ? all : rows).slice().sort((a,b) => a.cost - b.cost);
+  $('optTable').querySelector('tbody').innerHTML = shown.map(r => {
+    const isBest = Math.abs(r.cost - bestCost) < 1e-9;
+    const vs = r.cost - sol.singlesCost > 0.5 ? '+'+fmt(r.cost - sol.singlesCost)
+      : sol.singlesCost - r.cost > 0.5 ? '−'+fmt(sol.singlesCost - r.cost) : '—';
+    return `<tr class="${isBest?'best':''}"><td>${isBest?'🏆 ':''}${r.name}</td>` +
+      `<td>${buyBadges(r.spec)}</td><td><b>${fmt(r.cost)}</b></td><td>${vs}</td></tr>`;
+  }).join('');
+  $('explainLine').textContent = showAll ? `All ${all.length} variants. Optimizer mixes may combine multiple Epic bundles.`
+    : `Best mix per approach. Expand for every single-bundle variant.`;
+  $('btnAll').textContent = showAll ? 'Show fewer' : `Show all ${all.length}`;
+
+  renderMap(weekdays, weekends, nights);
+}
+
+const range12 = Array.from({length:13}, (_,i) => i);
+
+function renderMap(weekdays, weekends, nights){
+  const vals = {weekdays, weekends, nights};
+  const fDim = DIMS.find(d => d !== mapRows && d !== mapCols);
+  $('selRows').value = mapRows; $('selCols').value = mapCols;
+  $('fixedNote').textContent = `${fDim} = ${vals[fDim]}`;
+  let h = `<table class="grid"><tr><th class="corner">${fDim} = ${vals[fDim]}</th>` +
+    range12.map(c => `<th>${c}</th>`).join('') + '</tr>';
+  for(const r of range12){
+    h += `<tr><th>${r}</th>`;
+    for(const c of range12){
+      const m = {...vals}; m[mapRows] = r; m[mapCols] = c;
+      const s = solve(m.weekdays, m.weekends, m.nights);
+      h += `<td data-r="${r}" data-c="${c}" style="background:${categoryOf(s).color}">${fmt(s.bestCost)}</td>`;
+    }
+    h += '</tr>';
+  }
+  $('mapMount').innerHTML = h + '</table>';
+}
+
+function mapTipFor(r, c, vals){
+  const m = {...vals}; m[mapRows] = r; m[mapCols] = c;
+  const {rows} = bestMixes(m.weekdays, m.weekends, m.nights);
+  const [best, ...alts] = rows;
+  return `<div class="tt-head">${m.weekdays} weekdays · ${m.weekends} weekends · ${m.nights} nights</div>` +
+    `<div class="tt-row">🏆 ${buyBadges(best.spec)} <span class="tt-cost">${fmt(best.cost)}</span></div>` +
+    alts.slice(0,2).map((a,i) =>
+      `<div class="tt-row"><span class="tt-alt">${i===0?'2nd':'3rd'}</span> ${buyBadges(a.spec)} <span class="tt-cost">${fmt(a.cost)}</span></div>`
+    ).join('') + `<div class="tt-hint">click to load</div>`;
+}
+
+(function initMap(){
+  const mount = $('mapMount'), tip = $('mapTip');
+  mount.addEventListener('mouseover', ev => {
+    const td = ev.target.closest('td'); if(!td) return;
+    const vals = getInputs();
+    tip.innerHTML = mapTipFor(+td.dataset.r, +td.dataset.c, vals);
+    tip.style.display = 'block';
+    const pad = 14, tw = tip.offsetWidth, th = tip.offsetHeight;
+    let x = ev.clientX + pad, y = ev.clientY + pad;
+    if(x + tw > innerWidth - 8) x = ev.clientX - tw - pad;
+    if(y + th > innerHeight - 8) y = ev.clientY - th - pad;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  });
+  mount.addEventListener('mousemove', ev => {
+    if(tip.style.display !== 'block') return;
+    const pad = 14, tw = tip.offsetWidth, th = tip.offsetHeight;
+    let x = ev.clientX + pad, y = ev.clientY + pad;
+    if(x + tw > innerWidth - 8) x = ev.clientX - tw - pad;
+    if(y + th > innerHeight - 8) y = ev.clientY - th - pad;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  });
+  mount.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  mount.addEventListener('click', ev => {
+    const td = ev.target.closest('td'); if(!td) return;
+    const vals = getInputs();
+    vals[mapRows] = +td.dataset.r; vals[mapCols] = +td.dataset.c;
+    setInputs(vals.weekdays, vals.weekends, vals.nights);
+    tip.style.display = 'none';
+  });
+})();
+
+for(const id of ['inWeekdays','inWeekends','inNights'])
+  $(id).addEventListener('input', render);
+$('btnAll').onclick = () => { showAll = !showAll; render(); };
+$('selRows').onchange = () => {
+  const v = $('selRows').value;
+  if(v === mapCols) mapCols = mapRows;
+  mapRows = v; renderMap(...Object.values(getInputs()));
+};
+$('selCols').onchange = () => {
+  const v = $('selCols').value;
+  if(v === mapRows) mapRows = mapCols;
+  mapCols = v; renderMap(...Object.values(getInputs()));
+};
+render();
+</script>
+</body>
+</html>
