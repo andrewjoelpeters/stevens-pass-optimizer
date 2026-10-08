@@ -55,6 +55,9 @@
     cursor:pointer; font-weight:650; font-size:13px}
   .btn:hover{background:#1f2937}
   .hint{font-size:12.5px; color:var(--muted); margin:8px 0 0}
+  .ff{display:flex; align-items:center; gap:8px; margin-top:10px; font-size:14px; font-weight:600; cursor:pointer}
+  .ff input{width:16px; height:16px; accent-color:#111827}
+  .fn{font-size:11px; color:var(--muted); font-weight:600; margin-left:2px; white-space:nowrap}
   .map-ctrl{display:flex; gap:14px; align-items:end; flex-wrap:wrap; margin-bottom:10px}
   .map-ctrl .fld{display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted)}
   .map-ctrl select{font-size:14px; padding:6px 10px; border:1px solid var(--border); border-radius:8px; background:#fff}
@@ -96,7 +99,7 @@
     <span class="chip">Epic 5-day <b>$425</b></span>
     <span class="chip">Epic 6-day <b>$482</b></span>
     <span class="chip">Epic 7-day <b>$537</b></span>
-    <span class="chip">Day <b>$150</b></span>
+    <span class="chip" id="chipDay">Day <b>$150</b></span>
     <span class="chip">Night <b>$90</b></span>
   </div>
 </header>
@@ -121,6 +124,7 @@
         <div class="sub">After 3pm · covered by Select</div>
       </div>
     </div>
+    <label class="ff"><input type="checkbox" id="inFF" checked> Friends &amp; family — 50% off day tickets</label>
   </div>
 
   <div class="card">
@@ -179,6 +183,7 @@
       <li>Unlimited ($720) covers everything. Never combined with other passes.</li>
       <li>One Epic day covers 1 weekday or 1 weekend day. Leftover Epic days apply to nights. Multiple Epic bundles allowed.</li>
       <li>Epic peak-day blackouts ignored. No tax/fees.</li>
+      <li>Friends &amp; family: 50% off day tickets ($75, passes excluded). Uncovered nights use a $75 day ticket — never a $90 night ticket.</li>
       <li>At current prices no Select + Epic mix can win: cheapest is $462 + $293 = $755 &gt; $720 Unlimited.</li>
     </ul>
   </details>
@@ -194,6 +199,7 @@ const DIMS = ['weekdays','weekends','nights'];
 const fmt = x => '$' + Math.round(x).toLocaleString();
 
 function coverCost(F, N){
+  const dayP = dayPrice, nightUnit = Math.min(PRICES.night, dayP), asDay = dayP < PRICES.night;
   const maxD = F + N + 7, INF = 1e15;
   const dp = new Array(maxD+1).fill(INF);
   const bk = new Array(maxD+1).fill(null);
@@ -203,16 +209,16 @@ function coverCost(F, N){
       const p = PRICES.epic[k];
       if(d-k >= 0 && dp[d-k] + p < dp[d]){ dp[d] = dp[d-k] + p; bk[d] = [...bk[d-k], k]; }
     }
-  let best = { cost: F*PRICES.day + N*PRICES.night, epicBundles: [], epicDays: 0,
-               singleDays: F, singleNights: N };
+  let best = { cost: F*dayP + N*nightUnit, epicBundles: [], epicDays: 0,
+               singleDays: F, singleNights: asDay ? 0 : N, nightsAsDay: asDay ? N : 0 };
   for(let d=0; d<=maxD; d++){
     if(dp[d] === INF) continue;
     const covDays = Math.min(d, F), remDays = F - covDays;
     const covNights = Math.min(d - covDays, N), remNights = N - covNights;
-    const total = dp[d] + remDays*PRICES.day + remNights*PRICES.night;
+    const total = dp[d] + remDays*dayP + remNights*nightUnit;
     if(total < best.cost - 1e-9)
       best = { cost: total, epicBundles: [...bk[d]].sort((a,b)=>a-b), epicDays: d,
-               singleDays: remDays, singleNights: remNights };
+               singleDays: remDays, singleNights: asDay ? 0 : remNights, nightsAsDay: asDay ? remNights : 0 };
   }
   return best;
 }
@@ -226,7 +232,7 @@ function solve(weekdays, weekends, nights){
   if(sel.cost < bestCost - 1e-9){ winner = 'select'; bestCost = sel.cost; }
   if(unlCost < bestCost - 1e-9){ winner = 'unlimited'; bestCost = unlCost; }
   return { noSel, sel, unlCost, winner, bestCost,
-           singlesCost: (weekdays+weekends)*PRICES.day + nights*PRICES.night };
+           singlesCost: (weekdays+weekends)*dayPrice + nights*Math.min(PRICES.night, dayPrice) };
 }
 
 function categoryOf(sol){
@@ -247,7 +253,16 @@ function buyBadges(spec){
   (spec.epic || []).forEach(k => { h += `<span class="pk pk-epic">Epic ${k}-day · $${PRICES.epic[k]}</span>`; });
   if(spec.days) h += `<span class="pk pk-day">Day ×${spec.days}</span>`;
   if(spec.nights) h += `<span class="pk pk-night">Night ×${spec.nights}</span>`;
+  if(spec.forNights) h += `<span class="fn">${spec.forNights} for nights</span>`;
   return h || '<span class="hint">—</span>';
+}
+
+// spec from an optimizer result: uncovered nights bought as day tickets fold into Day count
+function mixSpec(epicArr, b, sel){
+  const s = {epic: epicArr, days: b.singleDays + (b.nightsAsDay||0), nights: b.singleNights||0};
+  if(sel) s.sel = true;
+  if(b.nightsAsDay) s.forNights = b.nightsAsDay;
+  return s;
 }
 
 function specFor(winner, sol){
@@ -259,21 +274,25 @@ function specFor(winner, sol){
 }
 
 function singleBundleCost(epicK, F, N){
-  if(!epicK) return { cost: F*PRICES.day + N*PRICES.night, singleDays: F, singleNights: N };
+  const dayP = dayPrice, nightUnit = Math.min(PRICES.night, dayP), asDay = dayP < PRICES.night;
+  if(!epicK) return { cost: F*dayP + N*nightUnit, singleDays: F,
+    singleNights: asDay ? 0 : N, nightsAsDay: asDay ? N : 0 };
   const covD = Math.min(epicK, F), remD = F - covD;
   const covN = Math.min(epicK - covD, N), remN = N - covN;
-  return { cost: PRICES.epic[epicK] + remD*PRICES.day + remN*PRICES.night,
-           singleDays: remD, singleNights: remN };
+  return { cost: PRICES.epic[epicK] + remD*dayP + remN*nightUnit,
+           singleDays: remD, singleNights: asDay ? 0 : remN, nightsAsDay: asDay ? remN : 0 };
 }
 
 // best mix per approach, cheapest first (deduped) — shared by table + tooltips
 function bestMixes(weekdays, weekends, nights){
   const sol = solve(weekdays, weekends, nights);
+  const ff = dayPrice < PRICES.night;
   const rows = [
-    {name:'Singles', spec:{days:weekdays+weekends, nights}, cost: sol.singlesCost},
+    {name:'Singles', spec:{days: weekdays+weekends + (ff ? nights : 0), nights: ff ? 0 : nights,
+      ...(ff && nights ? {forNights: nights} : {})}, cost: sol.singlesCost},
     {name:'Unlimited', spec:{unl:true}, cost: sol.unlCost},
-    {name:'Select', spec:{sel:true, epic:[...sol.sel.epicBundles], days:sol.sel.singleDays, nights:sol.sel.singleNights}, cost: sol.sel.cost},
-    {name:'No-Select', spec:{epic:[...sol.noSel.epicBundles], days:sol.noSel.singleDays, nights:sol.noSel.singleNights}, cost: sol.noSel.cost},
+    {name:'Select', spec: mixSpec([...sol.sel.epicBundles], sol.sel, true), cost: sol.sel.cost},
+    {name:'No-Select', spec: mixSpec([...sol.noSel.epicBundles], sol.noSel, false), cost: sol.noSel.cost},
   ];
   const seen = new Set();
   return { sol, rows: rows
@@ -284,7 +303,7 @@ function bestMixes(weekdays, weekends, nights){
 
 // ---- UI ----
 const $ = id => document.getElementById(id);
-let showAll = false, mapRows = 'nights', mapCols = 'weekdays';
+let showAll = false, mapRows = 'nights', mapCols = 'weekdays', ffOn = true, dayPrice = PRICES.day;
 
 function getInputs(){
   return { weekdays: +$('inWeekdays').value||0, weekends: +$('inWeekends').value||0, nights: +$('inNights').value||0 };
@@ -295,6 +314,7 @@ function setInputs(weekdays, weekends, nights){
 }
 
 function render(){
+  dayPrice = ffOn ? PRICES.day/2 : PRICES.day;
   const {weekdays, weekends, nights} = getInputs();
   $('outWeekdays').textContent = weekdays;
   $('outWeekends').textContent = weekends;
@@ -311,12 +331,12 @@ function render(){
      <div class="meta">${totalSessions} sessions · ${fmt(sol.bestCost/Math.max(1,totalSessions))}/session` +
      (save > 0.5 ? ` · saves <b>${fmt(save)}</b> vs singles` : ` · no pass beats singles`) + `</div></div>`;
 
-  const extra = [{name:'Select + singles', spec:{sel:true, days:weekends}, cost: PRICES.select + weekends*PRICES.day}];
+  const extra = [{name:'Select + singles', spec: mixSpec([], {singleDays:weekends}, true), cost: PRICES.select + weekends*dayPrice}];
   for(const k of EPIC_SIZES){
     const r = singleBundleCost(k, weekdays+weekends, nights);
-    extra.push({name:`Epic ${k}-day`, spec:{epic:[k], days:r.singleDays, nights:r.singleNights}, cost:r.cost});
+    extra.push({name:`Epic ${k}-day`, spec: mixSpec([k], r, false), cost:r.cost});
     const r2 = singleBundleCost(k, weekends, 0);
-    extra.push({name:`Select + Epic ${k}-day`, spec:{sel:true, epic:[k], days:r2.singleDays, nights:r2.singleNights}, cost: PRICES.select + r2.cost});
+    extra.push({name:`Select + Epic ${k}-day`, spec: mixSpec([k], r2, true), cost: PRICES.select + r2.cost});
   }
   const all = [...rows, ...extra];
   const bestCost = Math.min(...all.map(r => r.cost));
@@ -331,6 +351,7 @@ function render(){
   $('explainLine').textContent = showAll ? `All ${all.length} variants. Optimizer mixes may combine multiple Epic bundles.`
     : `Best mix per approach. Expand for every single-bundle variant.`;
   $('btnAll').textContent = showAll ? 'Show fewer' : `Show all ${all.length}`;
+  $('chipDay').innerHTML = ffOn ? 'Day <b>$75</b> · F&F' : 'Day <b>$150</b>';
 
   renderMap(weekdays, weekends, nights);
 }
@@ -400,6 +421,7 @@ function mapTipFor(r, c, vals){
 
 for(const id of ['inWeekdays','inWeekends','inNights'])
   $(id).addEventListener('input', render);
+$('inFF').onchange = () => { ffOn = $('inFF').checked; render(); };
 $('btnAll').onclick = () => { showAll = !showAll; render(); };
 $('selRows').onchange = () => {
   const v = $('selRows').value;
